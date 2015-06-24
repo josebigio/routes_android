@@ -52,7 +52,9 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
     List<StopPOJO> stopPOJOsArray;
     StopPOJO stopPOJO;
     HashMap<Marker,Stop> markerStopHashMap;
+    HashMap<Marker,LatLng> markerLatLngHashMap; //use for hackiness
     Location lastLocation;
+    LatLng floatingMarkerPosition;
 
     @InjectView(R.id.stopsAroundButton) Button stopsAroundButton;
     Boolean alreadyZoomed;
@@ -66,7 +68,8 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
 
         alreadyZoomed = false;
         stopPOJOsArray = new ArrayList<>();
-        markerStopHashMap = new HashMap<>();
+        markerStopHashMap = new HashMap<>(); // TODO: remove memory leaks
+        markerLatLngHashMap = new HashMap<>(); //TODO: remove memory leaks
         createMapView();
 
     }
@@ -192,6 +195,7 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
                     .draggable(true)
                     .icon(BitmapDescriptorFactory.fromResource(R.mipmap.bus_stop)));
             markerStopHashMap.put(m, stop);
+            markerLatLngHashMap.put(m,m.getPosition());
         }
     }
 
@@ -201,7 +205,6 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
         Stop stop = markerStopHashMap.get(marker);
         if(stop == null)
             return;
-
 
         for(Route r:stop.getRoutes()){
             PolylineOptions polylineOptions = new PolylineOptions();
@@ -213,17 +216,16 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
             googleMap.addPolyline(polylineOptions);
         }
 
-
-        return;
+        marker.setPosition(markerLatLngHashMap.get(marker));
     }
 
     @Override
     public void onMarkerDrag(Marker marker) {
-        return;
+        marker.setPosition(markerLatLngHashMap.get(marker));
     }
 
     @Override
     public void onMarkerDragEnd(Marker marker) {
-        return;
+        marker.setPosition(markerLatLngHashMap.get(marker));
     }
 }
