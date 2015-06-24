@@ -51,7 +51,7 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
     GoogleMap googleMap;
     List<StopPOJO> stopPOJOsArray;
     StopPOJO stopPOJO;
-    HashMap<Marker,Integer> markers;
+    HashMap<Marker,Stop> markerStopHashMap;
     Location lastLocation;
 
     @InjectView(R.id.stopsAroundButton) Button stopsAroundButton;
@@ -66,7 +66,7 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
 
         alreadyZoomed = false;
         stopPOJOsArray = new ArrayList<>();
-        markers = new HashMap<>();
+        markerStopHashMap = new HashMap<>();
         createMapView();
 
     }
@@ -178,7 +178,6 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
 
     public void drawStopPOJO(StopPOJO stopPOJO) {
         List<Stop> stopList = stopPOJO.getStops();
-        int position = 0;
         for (Stop stop : stopList) {
             List<Route> routes = stop.getRoutes();
             if(routes == null) return;
@@ -192,20 +191,16 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
                     .snippet(headSigns.toString())
                     .draggable(true)
                     .icon(BitmapDescriptorFactory.fromResource(R.mipmap.bus_stop)));
-            markers.put(m,position);
-            position++;
+            markerStopHashMap.put(m, stop);
         }
     }
 
     @Override
     public void onMarkerDragStart(Marker marker) {
 
-        int pos = markers.get(marker);
-        List<Stop> stops = stopPOJO.getStops();
-        if(pos>stops.size()-1)
+        Stop stop = markerStopHashMap.get(marker);
+        if(stop == null)
             return;
-
-        Stop stop = stops.get(pos);
 
 
         for(Route r:stop.getRoutes()){
