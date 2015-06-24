@@ -21,7 +21,15 @@
         android:layout_height="wrap_content"
         android:id="@+id/stopsAroundButton"
         android:layout_below="@+id/header"
-        android:text="KABOOM"/>
+        android:text="wait..."/>
+
+    <Button
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:id="@+id/updateLocationButton"
+        android:layout_below="@+id/header"
+        android:layout_toRightOf="@+id/stopsAroundButton"
+        android:text="Update location"/>
 
     <fragment
         android:id="@+id/mapView"

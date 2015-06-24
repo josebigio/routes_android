@@ -1,36 +1,35 @@
 package com.example.josebigio.mapapp;
 
 import android.app.Activity;
-import android.content.Context;
+import android.graphics.Color;
 import android.location.Criteria;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Bundle;
-import android.util.Log;
-import android.view.Menu;
-import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
-import android.widget.TextView;
-import android.widget.Toast;
 
 import com.example.josebigio.mapapp.api.RoutesAPI;
+import com.example.josebigio.mapapp.model.Coordinate;
 import com.example.josebigio.mapapp.model.Route;
 import com.example.josebigio.mapapp.model.Stop;
 import com.example.josebigio.mapapp.model.StopPOJO;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.MapFragment;
+import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.PolylineOptions;
 
-import org.joda.time.LocalTime;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 
 import butterknife.ButterKnife;
@@ -40,17 +39,20 @@ import retrofit.Callback;
 import retrofit.RestAdapter;
 import retrofit.RetrofitError;
 import retrofit.client.Response;
-import rx.android.schedulers.AndroidSchedulers;
 
 
-public class MainActivity extends Activity implements LocationListener {
+public class MainActivity extends Activity implements LocationListener, GoogleMap.OnMarkerDragListener {
 
     static final String ROUTES_API="https://routes-app-pro.herokuapp.com";
     static final double RADIUS = 0.25;
     static final int LIMIT = 2700; //The range in seconds for when looking at upcoming buses
+    static final int MAX_STOP_POJO = 3;
 
     GoogleMap googleMap;
+    List<StopPOJO> stopPOJOsArray;
     StopPOJO stopPOJO;
+    HashMap<Marker,Integer> markers;
+    Location lastLocation;
 
     @InjectView(R.id.stopsAroundButton) Button stopsAroundButton;
     Boolean alreadyZoomed;
@@ -63,6 +65,8 @@ public class MainActivity extends Activity implements LocationListener {
         ButterKnife.inject(this);
 
         alreadyZoomed = false;
+        stopPOJOsArray = new ArrayList<>();
+        markers = new HashMap<>();
         createMapView();
 
     }
@@ -72,8 +76,11 @@ public class MainActivity extends Activity implements LocationListener {
      * Initialises the mapview and zooms it to the user's current location
      */
     private void createMapView() {
-        googleMap = ((MapFragment) getFragmentManager().findFragmentById(R.id.mapView)).getMap();
+
+        googleMap = ((MapFragment) getFragmentManager().findFragmentById(
+                R.id.mapView)).getMap();
         googleMap.setMyLocationEnabled(true);
+        googleMap.setOnMarkerDragListener(this);
 
 
         LocationManager locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
@@ -93,23 +100,16 @@ public class MainActivity extends Activity implements LocationListener {
     @Override
     public void onLocationChanged(Location location) {
         System.out.println("Location changed!! to: " + location);
-        googleMap.moveCamera(CameraUpdateFactory.newLatLng(new LatLng(location.getLatitude(), location.getLongitude())));
+        lastLocation = location;
 
         if(!alreadyZoomed){
             alreadyZoomed = true;
+            googleMap.moveCamera(CameraUpdateFactory.newLatLng(new LatLng(location.getLatitude(), location.getLongitude())));
             googleMap.animateCamera(CameraUpdateFactory.zoomTo(15));
         }
 
-
-        Date now = new Date();
-        String time = new SimpleDateFormat("kk:mm:ss").format(now);
-        System.out.println("Time: " + time);
-        Calendar c = Calendar.getInstance();
-        int day = c.get(Calendar.DAY_OF_WEEK);
-        System.out.println("Day: " + day);
-
-
-        updateStopPOJO(location, RADIUS, time, day, LIMIT);
+        if(stopPOJO == null)
+            updateStopPOJO(lastLocation, RADIUS,LIMIT);
     }
 
     @Override
@@ -127,23 +127,27 @@ public class MainActivity extends Activity implements LocationListener {
 
     }
 
-    public void updateStopPOJO(Location location, double radius, String time, int weekDay, int secondsLimit) {
+    public void updateStopPOJO(Location location, double radius, int secondsLimit) {
 
+        Date now = new Date();
+        String time = new SimpleDateFormat("kk:mm:ss").format(now);
+        Calendar c = Calendar.getInstance();
+        int weekDay = c.get(Calendar.DAY_OF_WEEK);
 
         RestAdapter restAdapter = new RestAdapter.Builder().setEndpoint(ROUTES_API).build();
         RoutesAPI routes = restAdapter.create(RoutesAPI.class);
         routes.getRoutesAround(location.getLatitude()+"", location.getLongitude()+"", radius+"",time, weekDay+"", secondsLimit+"", new Callback<StopPOJO>() {
             @Override
             public void success(StopPOJO stopPOJOR, Response response) {
-                //we get json object from github server to our POJO or model class
                 stopPOJO = stopPOJOR;
-                StringBuffer resultString = new StringBuffer();
+                stopsAroundButton.setText("KABOOOM!!!");
+//                StringBuffer resultString = new StringBuffer();
 //                List<Stop> stopList = stopPOJOR.getStops();
 //                for (Stop stop : stopList) {
 //                    resultString.append("stop id: " + stop.getStopId() + "\n");
 //                    List<Route> routeList = stop.getRoutes();
 //                    for (Route route : routeList) {
-//                        resultString.append("route name: " + route.getRouteName() + ", " + route.getArrivalTime() + ", headSign: " + route.getHeadsign() +"\n");
+//                        resultString.append("route name: " + route.getRouteName() + ", " + route.getArrivalTime() + ", headSign: " + route.getHeadsign() + ", number of coords: " + route.getCoordinates().size() + "\n");
 //                    }
 //                    resultString.append("distance: " + stop.getDistance() + "\n");
 //                }
@@ -160,24 +164,71 @@ public class MainActivity extends Activity implements LocationListener {
     }
 
     @OnClick(R.id.stopsAroundButton)
-    public void drawAnnotationsOfBusStops(View view) {
-       if(stopPOJO==null) return;
-
+    public void stopsAroundButtonPress(View view) {
+        if(stopPOJO==null) return;
         googleMap.clear();
+        drawStopPOJO(stopPOJO);
+    }
+
+    @OnClick(R.id.updateLocationButton)
+    public void updateLocationButtonPress(View view) {
+        stopsAroundButton.setText("wait...");
+        updateStopPOJO(lastLocation, RADIUS, LIMIT);
+    }
+
+    public void drawStopPOJO(StopPOJO stopPOJO) {
         List<Stop> stopList = stopPOJO.getStops();
+        int position = 0;
         for (Stop stop : stopList) {
             List<Route> routes = stop.getRoutes();
+            if(routes == null) return;
             StringBuffer headSigns = new StringBuffer();
             for(Route route: routes)
                 headSigns.append(route.getHeadsign()+": " + route.getArrivalTime() + "\n");
-            System.out.println("headisngs: " + headSigns);
-            googleMap.addMarker(new MarkerOptions()
-            .position(new LatLng(stop.getLat(),stop.getLng()))
-            .title(stop.getStopId()+"")
-            .snippet(headSigns.toString()));
+
+            Marker m = googleMap.addMarker(new MarkerOptions()
+                    .position(new LatLng(stop.getLat(), stop.getLng()))
+                    .title(stop.getStopId() + "")
+                    .snippet(headSigns.toString())
+                    .draggable(true)
+                    .icon(BitmapDescriptorFactory.fromResource(R.mipmap.bus_stop)));
+            markers.put(m,position);
+            position++;
+        }
+    }
+
+    @Override
+    public void onMarkerDragStart(Marker marker) {
+
+        int pos = markers.get(marker);
+        List<Stop> stops = stopPOJO.getStops();
+        if(pos>stops.size()-1)
+            return;
+
+        Stop stop = stops.get(pos);
+
+
+        for(Route r:stop.getRoutes()){
+            PolylineOptions polylineOptions = new PolylineOptions();
+            System.out.println("color: #" + r.getColor());
+            polylineOptions.color(Color.parseColor("#"+r.getColor()));
+            for(Coordinate coordinate: r.getCoordinates()){
+                polylineOptions.add(new LatLng(coordinate.getLat(),coordinate.getLng()));
+            }
+            googleMap.addPolyline(polylineOptions);
         }
 
 
+        return;
+    }
 
+    @Override
+    public void onMarkerDrag(Marker marker) {
+        return;
+    }
+
+    @Override
+    public void onMarkerDragEnd(Marker marker) {
+        return;
     }
 }
