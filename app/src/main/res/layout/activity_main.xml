@@ -16,27 +16,31 @@
 
     </RelativeLayout>
 
-    <Button
+
+    <RelativeLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:id="@+id/stopsAroundButton"
-        android:layout_below="@+id/header"
-        android:text="wait..."/>
+        android:id="@+id/mapFrameView"
+        android:layout_below="@id/header"
+        android:layout_gravity="center"
+        >
 
-    <Button
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:id="@+id/updateLocationButton"
-        android:layout_below="@+id/header"
-        android:layout_toRightOf="@+id/stopsAroundButton"
-        android:text="Update location"/>
+        <fragment
+            android:id="@+id/mapView"
+            android:name="com.google.android.gms.maps.MapFragment"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"/>
 
-    <fragment
-        android:id="@+id/mapView"
-        android:name="com.google.android.gms.maps.MapFragment"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_below="@+id/stopsAroundButton"/>
+        <ProgressBar
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:id="@+id/progressBar"
+            android:indeterminate="false"
+            android:layout_centerInParent="true"
+            android:visibility="invisible"/>
+
+    </RelativeLayout>
+
 
 
 

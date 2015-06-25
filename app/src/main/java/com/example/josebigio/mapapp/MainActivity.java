@@ -7,9 +7,12 @@ import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ProgressBar;
 
+import com.example.josebigio.mapapp.Utilities.ColorGenerator;
 import com.example.josebigio.mapapp.api.RoutesAPI;
 import com.example.josebigio.mapapp.model.Coordinate;
 import com.example.josebigio.mapapp.model.Route;
@@ -31,6 +34,7 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Set;
 
 import butterknife.ButterKnife;
 import butterknife.InjectView;
@@ -41,23 +45,27 @@ import retrofit.RetrofitError;
 import retrofit.client.Response;
 
 
-public class MainActivity extends Activity implements LocationListener, GoogleMap.OnMarkerDragListener {
+public class MainActivity extends Activity implements LocationListener, GoogleMap.OnMarkerDragListener, GoogleMap.OnMapLongClickListener {
+
+    static final String TAG = "MAIN";
+
 
     static final String ROUTES_API="https://routes-app-pro.herokuapp.com";
     static final double RADIUS = 0.25;
     static final int LIMIT = 2700; //The range in seconds for when looking at upcoming buses
-    static final int MAX_STOP_POJO = 3;
+
+    @InjectView(R.id.progressBar)
+    ProgressBar progressBar;
+
 
     GoogleMap googleMap;
     List<StopPOJO> stopPOJOsArray;
-    StopPOJO stopPOJO;
     HashMap<Marker,Stop> markerStopHashMap;
-    HashMap<Marker,LatLng> markerLatLngHashMap; //use for hackiness
-    Location lastLocation;
-    LatLng floatingMarkerPosition;
+    HashMap<Marker,LatLng> markerLatLngHashMap; //used for hackiness
 
-    @InjectView(R.id.stopsAroundButton) Button stopsAroundButton;
+
     Boolean alreadyZoomed;
+    Boolean isLoadingAPICall;
 
 
     @Override
@@ -67,6 +75,7 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
         ButterKnife.inject(this);
 
         alreadyZoomed = false;
+        isLoadingAPICall = false;
         stopPOJOsArray = new ArrayList<>();
         markerStopHashMap = new HashMap<>(); // TODO: remove memory leaks
         markerLatLngHashMap = new HashMap<>(); //TODO: remove memory leaks
@@ -82,28 +91,29 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
 
         googleMap = ((MapFragment) getFragmentManager().findFragmentById(
                 R.id.mapView)).getMap();
+
+        if(googleMap==null){
+            Log.e(TAG,"GOOGLE MAPS WAS NULL???");
+            return;
+        }
+
         googleMap.setMyLocationEnabled(true);
         googleMap.setOnMarkerDragListener(this);
+        googleMap.setOnMapLongClickListener(this);
 
 
         LocationManager locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
         Criteria criteria = new Criteria();
         String bestProvider = locationManager.getBestProvider(criteria,true);
         Location location = locationManager.getLastKnownLocation(bestProvider);
-        if (location != null) {
-            System.out.println("Location was not null");
+        if (location != null)
             onLocationChanged(location);
-        }
-        else {
-            System.out.println("location was null");
-        }
+
         locationManager.requestLocationUpdates(bestProvider, 20000, 0, this);
     }
 
     @Override
     public void onLocationChanged(Location location) {
-        System.out.println("Location changed!! to: " + location);
-        lastLocation = location;
 
         if(!alreadyZoomed){
             alreadyZoomed = true;
@@ -111,8 +121,6 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
             googleMap.animateCamera(CameraUpdateFactory.zoomTo(15));
         }
 
-        if(stopPOJO == null)
-            updateStopPOJO(lastLocation, RADIUS,LIMIT);
     }
 
     @Override
@@ -130,60 +138,12 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
 
     }
 
-    public void updateStopPOJO(Location location, double radius, int secondsLimit) {
-
-        Date now = new Date();
-        String time = new SimpleDateFormat("kk:mm:ss").format(now);
-        Calendar c = Calendar.getInstance();
-        int weekDay = c.get(Calendar.DAY_OF_WEEK);
-
-        RestAdapter restAdapter = new RestAdapter.Builder().setEndpoint(ROUTES_API).build();
-        RoutesAPI routes = restAdapter.create(RoutesAPI.class);
-        routes.getRoutesAround(location.getLatitude()+"", location.getLongitude()+"", radius+"",time, weekDay+"", secondsLimit+"", new Callback<StopPOJO>() {
-            @Override
-            public void success(StopPOJO stopPOJOR, Response response) {
-                stopPOJO = stopPOJOR;
-                stopsAroundButton.setText("KABOOOM!!!");
-//                StringBuffer resultString = new StringBuffer();
-//                List<Stop> stopList = stopPOJOR.getStops();
-//                for (Stop stop : stopList) {
-//                    resultString.append("stop id: " + stop.getStopId() + "\n");
-//                    List<Route> routeList = stop.getRoutes();
-//                    for (Route route : routeList) {
-//                        resultString.append("route name: " + route.getRouteName() + ", " + route.getArrivalTime() + ", headSign: " + route.getHeadsign() + ", number of coords: " + route.getCoordinates().size() + "\n");
-//                    }
-//                    resultString.append("distance: " + stop.getDistance() + "\n");
-//                }
-//
-//                System.out.println(resultString);
-            }
-
-            @Override
-            public void failure(RetrofitError error) {
-                System.out.println(error.getMessage());
-            }
-        });
-
-    }
-
-    @OnClick(R.id.stopsAroundButton)
-    public void stopsAroundButtonPress(View view) {
-        if(stopPOJO==null) return;
-        googleMap.clear();
-        drawStopPOJO(stopPOJO);
-    }
-
-    @OnClick(R.id.updateLocationButton)
-    public void updateLocationButtonPress(View view) {
-        stopsAroundButton.setText("wait...");
-        updateStopPOJO(lastLocation, RADIUS, LIMIT);
-    }
 
     public void drawStopPOJO(StopPOJO stopPOJO) {
         List<Stop> stopList = stopPOJO.getStops();
         for (Stop stop : stopList) {
             List<Route> routes = stop.getRoutes();
-            if(routes == null) return;
+            if(routes == null) continue;
             StringBuffer headSigns = new StringBuffer();
             for(Route route: routes)
                 headSigns.append(route.getHeadsign()+": " + route.getArrivalTime() + "\n");
@@ -201,22 +161,24 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
 
     @Override
     public void onMarkerDragStart(Marker marker) {
-
         Stop stop = markerStopHashMap.get(marker);
         if(stop == null)
             return;
 
+        drawPolylinesForStop(stop);
+
+        marker.setPosition(markerLatLngHashMap.get(marker)); //to make the marker stay
+    }
+
+    private void drawPolylinesForStop(Stop stop){
         for(Route r:stop.getRoutes()){
             PolylineOptions polylineOptions = new PolylineOptions();
-            System.out.println("color: #" + r.getColor());
-            polylineOptions.color(Color.parseColor("#"+r.getColor()));
+            polylineOptions.color(ColorGenerator.getColorForRoute(r.getRouteName()));
             for(Coordinate coordinate: r.getCoordinates()){
                 polylineOptions.add(new LatLng(coordinate.getLat(),coordinate.getLng()));
             }
             googleMap.addPolyline(polylineOptions);
         }
-
-        marker.setPosition(markerLatLngHashMap.get(marker));
     }
 
     @Override
@@ -227,5 +189,41 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
     @Override
     public void onMarkerDragEnd(Marker marker) {
         marker.setPosition(markerLatLngHashMap.get(marker));
+    }
+
+    @Override
+    public void onMapLongClick(LatLng latLng) {
+        drawNewCluster(latLng);
+    }
+
+    private void drawNewCluster(LatLng latLng){
+        if(isLoadingAPICall)
+            return;
+
+        isLoadingAPICall = true;
+        progressBar.setVisibility(View.VISIBLE);
+
+        Date now = new Date();
+        String time = new SimpleDateFormat("kk:mm:ss").format(now);
+        Calendar c = Calendar.getInstance();
+        int weekDay = c.get(Calendar.DAY_OF_WEEK);
+
+        RestAdapter restAdapter = new RestAdapter.Builder().setEndpoint(ROUTES_API).build();
+        RoutesAPI routes = restAdapter.create(RoutesAPI.class);
+        routes.getRoutesAround(latLng.latitude+"", latLng.longitude+"", RADIUS+"",time, weekDay+"", LIMIT+"", new Callback<StopPOJO>() {
+            @Override
+            public void success(StopPOJO stopPOJOR, Response response) {
+                stopPOJOsArray.add(stopPOJOR);
+                drawStopPOJO(stopPOJOR);
+                isLoadingAPICall = false;
+                progressBar.setVisibility(View.INVISIBLE);
+            }
+
+            @Override
+            public void failure(RetrofitError error) {
+                System.out.println(error.getMessage());
+            }
+        });
+
     }
 }
