@@ -25,6 +25,7 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.Polyline;
 import com.google.android.gms.maps.model.PolylineOptions;
 
 
@@ -61,7 +62,10 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
     GoogleMap googleMap;
     List<StopPOJO> stopPOJOsArray;
     HashMap<Marker,Stop> markerStopHashMap;
+    HashMap<Marker,List<Polyline>> markerPolylinesHashMap;
     HashMap<Marker,LatLng> markerLatLngHashMap; //used for hackiness
+    HashMap<Marker,LatLng> clusterLatLngHashMap;
+    HashMap<Marker,List<Marker>>clusterMarkersHashMap;
 
 
     Boolean alreadyZoomed;
@@ -79,6 +83,9 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
         stopPOJOsArray = new ArrayList<>();
         markerStopHashMap = new HashMap<>(); // TODO: remove memory leaks
         markerLatLngHashMap = new HashMap<>(); //TODO: remove memory leaks
+        markerPolylinesHashMap = new HashMap<>(); //TODO: remove memory leaks
+        clusterMarkersHashMap = new HashMap<>(); //TODO: remove memory leaks
+        clusterLatLngHashMap = new HashMap<>(); //TODO: remove memory leaks
         createMapView();
 
     }
@@ -139,8 +146,16 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
     }
 
 
-    public void drawStopPOJO(StopPOJO stopPOJO) {
+    public void drawStopPOJO(StopPOJO stopPOJO, LatLng latLng) {
+
+        //The cluster first
+        Marker cluster = googleMap.addMarker(new MarkerOptions()
+                .draggable(true)
+                .position(latLng));
         List<Stop> stopList = stopPOJO.getStops();
+        List<Marker> markers = new ArrayList<>();
+        clusterMarkersHashMap.put(cluster,markers);
+
         for (Stop stop : stopList) {
             List<Route> routes = stop.getRoutes();
             if(routes == null) continue;
@@ -156,29 +171,89 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
                     .icon(BitmapDescriptorFactory.fromResource(R.mipmap.bus_stop)));
             markerStopHashMap.put(m, stop);
             markerLatLngHashMap.put(m,m.getPosition());
+            markerPolylinesHashMap.put(m,null);
+
+            markers.add(m);
         }
     }
 
     @Override
     public void onMarkerDragStart(Marker marker) {
+
+        //check typeOfMarker
+        if(markerStopHashMap.containsKey(marker)) {
+            Log.d(TAG,"Handle marker long detected");
+            handleMarkerLongClick(marker);
+        }else{
+            Log.d(TAG,"Handle clust long detected");
+            handleClusterLongClick(marker);
+        }
+
+    }
+
+    /*
+        Draws the polilines for all the routes in that stop.
+        If they where already drawn, then this cleans them
+     */
+    private void handleMarkerLongClick(Marker marker){
+
         Stop stop = markerStopHashMap.get(marker);
         if(stop == null)
             return;
 
-        drawPolylinesForStop(stop);
+        List<Polyline> oldPolylineList = markerPolylinesHashMap.get(marker);
+        if(oldPolylineList!=null) { //the user just wants to remove them :)
+            for(Polyline polyline: oldPolylineList){
+                polyline.remove();
+            }
+            markerPolylinesHashMap.put(marker,null);
+            marker.setPosition(markerLatLngHashMap.get(marker)); //to make the marker stay
+            return;
+        }
+
+        List<Polyline> polylinesList = drawPolylinesForStop(stop);
+        markerPolylinesHashMap.put(marker,polylinesList);
 
         marker.setPosition(markerLatLngHashMap.get(marker)); //to make the marker stay
     }
 
-    private void drawPolylinesForStop(Stop stop){
+    /*
+        Remove everything related to this cluster
+     */
+    private void handleClusterLongClick(Marker cluster){
+
+        List<Marker> markersToRemove = clusterMarkersHashMap.get(cluster);
+        for(Marker m:markersToRemove){
+
+            List<Polyline> polylines = markerPolylinesHashMap.get(m);
+            if(polylines!=null){
+                for(Polyline p: polylines){
+                    p.remove();
+                }
+            }
+            m.remove();
+            markerStopHashMap.remove(m);
+            markerLatLngHashMap.remove(m);
+            markerPolylinesHashMap.remove(m);
+        }
+        clusterMarkersHashMap.remove(cluster);
+        cluster.remove();
+    }
+
+    private List<Polyline> drawPolylinesForStop(Stop stop){
+
+        List<Polyline> result = new ArrayList<>();
+
         for(Route r:stop.getRoutes()){
             PolylineOptions polylineOptions = new PolylineOptions();
             polylineOptions.color(ColorGenerator.getColorForRoute(r.getRouteName()));
             for(Coordinate coordinate: r.getCoordinates()){
                 polylineOptions.add(new LatLng(coordinate.getLat(),coordinate.getLng()));
             }
-            googleMap.addPolyline(polylineOptions);
+            result.add(googleMap.addPolyline(polylineOptions));
         }
+
+        return result;
     }
 
     @Override
@@ -193,10 +268,11 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
 
     @Override
     public void onMapLongClick(LatLng latLng) {
+        Log.d(TAG,"LongClick detected");
         drawNewCluster(latLng);
     }
 
-    private void drawNewCluster(LatLng latLng){
+    private void drawNewCluster(final LatLng latLng){
         if(isLoadingAPICall)
             return;
 
@@ -213,15 +289,15 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
         routes.getRoutesAround(latLng.latitude+"", latLng.longitude+"", RADIUS+"",time, weekDay+"", LIMIT+"", new Callback<StopPOJO>() {
             @Override
             public void success(StopPOJO stopPOJOR, Response response) {
-                stopPOJOsArray.add(stopPOJOR);
-                drawStopPOJO(stopPOJOR);
+                stopPOJOsArray.add(stopPOJOR); //do we need this?
+                drawStopPOJO(stopPOJOR,latLng);
                 isLoadingAPICall = false;
                 progressBar.setVisibility(View.INVISIBLE);
             }
 
             @Override
             public void failure(RetrofitError error) {
-                System.out.println(error.getMessage());
+               Log.e(TAG,"Api call failed");
             }
         });
 
