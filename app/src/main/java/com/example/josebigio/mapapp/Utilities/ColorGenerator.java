@@ -14,8 +14,8 @@ public class ColorGenerator {
     private static final int[] colors = new int[]{ Color.RED, Color.BLUE, Color.YELLOW, Color.GREEN,
             Color.BLACK, Color.GRAY}; //TODO: Add more colors
 
-    public static int getColorForRoute(int routeId) {
-        Random r = new Random(routeId);
+    public static int getColorForRoute(String routeHeadsign) {
+        Random r = new Random(routeHeadsign.hashCode());
         return colors[r.nextInt(colors.length)];
     }
 
