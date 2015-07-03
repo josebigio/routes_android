@@ -11,6 +11,8 @@ import com.google.gson.annotations.SerializedName;
 public class Stop {
 
     @Expose
+    private Boolean data;
+    @Expose
     private Double distance;
     @Expose
     private Double lat;
@@ -21,6 +23,7 @@ public class Stop {
     @SerializedName("stop_id")
     @Expose
     private Integer stopId;
+
 
     /**
      *
@@ -111,5 +114,25 @@ public class Stop {
     public void setStopId(Integer stopId) {
         this.stopId = stopId;
     }
+
+    /**
+     *
+     * @return
+     * If it has data
+     */
+    public Boolean getData() {
+        return data;
+    }
+
+    /**
+     *
+     * @param data boolean
+     * The data
+     */
+    public void setData(Boolean data) {
+        this.data = data;
+    }
+
+
 
 }

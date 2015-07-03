@@ -15,6 +15,8 @@ public class StopMarkerProperties extends MarkerProperties {
     private List<Polyline> polylines;
     private Stop stop;
     private List<Marker> directionalArrows;
+    private List<Marker> nakedStops;
+
 
     public StopMarkerProperties(Stop stop, LatLng latlng, List<Polyline> polylines){
         super(latlng);
@@ -22,9 +24,6 @@ public class StopMarkerProperties extends MarkerProperties {
         this.polylines = polylines;
     }
 
-    public StopMarkerProperties(List<Polyline> polylines){
-        this.polylines = polylines;
-    }
 
     public List<Polyline> getPolylines() {
         return polylines;
@@ -48,5 +47,13 @@ public class StopMarkerProperties extends MarkerProperties {
 
     public void setDirectionalArrows(List<Marker> directionalArrows) {
         this.directionalArrows = directionalArrows;
+    }
+
+    public List<Marker> getNakedStops() {
+        return nakedStops;
+    }
+
+    public void setNakedStops(List<Marker> nakedStops) {
+        this.nakedStops = nakedStops;
     }
 }

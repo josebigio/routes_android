@@ -1,18 +1,9 @@
 package com.example.josebigio.mapapp;
 
 import android.app.Activity;
-import android.content.Context;
-import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.Matrix;
-import android.graphics.Paint;
-import android.graphics.PorterDuff;
-import android.graphics.PorterDuffXfermode;
-import android.graphics.drawable.BitmapDrawable;
-import android.graphics.drawable.Drawable;
 import android.location.Criteria;
 import android.location.Location;
 import android.location.LocationListener;
@@ -23,8 +14,11 @@ import android.view.View;
 import android.widget.ProgressBar;
 
 import com.example.josebigio.mapapp.CustomClasses.ClusterMarkerProperties;
+import com.example.josebigio.mapapp.CustomClasses.MarkerProperties;
+import com.example.josebigio.mapapp.CustomClasses.NakedStopMarkerProperties;
 import com.example.josebigio.mapapp.CustomClasses.StopMarkerProperties;
 import com.example.josebigio.mapapp.Utilities.ColorGenerator;
+import com.example.josebigio.mapapp.Utilities.IconColorChanger;
 import com.example.josebigio.mapapp.api.RoutesAPI;
 import com.example.josebigio.mapapp.model.Coordinate;
 import com.example.josebigio.mapapp.model.Route;
@@ -48,6 +42,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 
@@ -77,7 +72,8 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
     List<StopPOJO> stopPOJOsArray;
     HashMap<Marker,StopMarkerProperties> stopMarkerHashmap;
     HashMap<Marker,ClusterMarkerProperties> clusterMarkerHashmap;
-
+    HashMap<Marker,NakedStopMarkerProperties> nakedGeneratedStopsHashMap;
+    HashMap<Integer,Marker>nakedGeneratedStopsIDHashmap;
 
     Boolean alreadyZoomed;
     Boolean isLoadingAPICall;
@@ -94,10 +90,13 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
         stopPOJOsArray = new ArrayList<>();
         stopMarkerHashmap = new HashMap<>();
         clusterMarkerHashmap = new HashMap<>();
+        nakedGeneratedStopsHashMap = new HashMap<>();
+        nakedGeneratedStopsIDHashmap = new HashMap<>();
 
         createMapView();
-
     }
+
+
 
 
     /**
@@ -126,6 +125,7 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
             onLocationChanged(location);
 
         locationManager.requestLocationUpdates(bestProvider, 20000, 0, this);
+
     }
 
     @Override
@@ -155,18 +155,14 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
     }
 
 
-    public void drawStopPOJO(StopPOJO stopPOJO, LatLng latLng) {
-
-        //The cluster first
-        Marker cluster = googleMap.addMarker(new MarkerOptions()
-                .draggable(true)
-                .position(latLng)
-                .icon(BitmapDescriptorFactory.fromResource(R.drawable.ic_stars_black_24dp)));
-
-        List<Stop> stopList = stopPOJO.getStops();
+    public void drawCluster(StopPOJO stopPOJO, LatLng latLng, int color) {
         List<Marker> markers = new ArrayList<>();
+        List<Stop> stopList = stopPOJO.getStops();
+        Marker cluster = googleMap.addMarker(new MarkerOptions()
+                    .draggable(true)
+                    .position(latLng)
+                    .icon(BitmapDescriptorFactory.fromResource(R.drawable.ic_stars_black_24dp)));
         clusterMarkerHashmap.put(cluster, new ClusterMarkerProperties(markers));
-
 
         for (Stop stop : stopList) {
             List<Route> routes = stop.getRoutes();
@@ -188,6 +184,35 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
 
     }
 
+    public void drawNakedStops(StopPOJO stopPOJO, int color, Marker originMarker) {
+
+        List<Marker> nakedStops = new ArrayList<>();
+        List<Stop> stopList = stopPOJO.getStops();
+        for (Stop stop : stopList) {
+            List<Route> routes = stop.getRoutes();
+            if(routes == null) continue;
+            StringBuffer headSigns = new StringBuffer();
+            for(Route route: routes)
+                headSigns.append(route.getHeadsign()+": " + route.getArrivalTime() + "\n");
+
+            BitmapDescriptor busIcon = IconColorChanger.getNewIconWithColor(Color.BLACK, color, R.drawable.ic_directions_bus_black_18dp, this);
+
+            Marker m = googleMap.addMarker(new MarkerOptions()
+                    .position(new LatLng(stop.getLat(), stop.getLng()))
+                    .title(stop.getStopId() + "")
+                    .snippet(headSigns.toString())
+                    .draggable(false)
+                    .icon(busIcon));
+
+            nakedStops.add(m);
+            nakedGeneratedStopsHashMap.put(m, new NakedStopMarkerProperties(m.getPosition()));
+            nakedGeneratedStopsIDHashmap.put(stop.getStopId(),m);
+        }
+
+        stopMarkerHashmap.get(originMarker).setNakedStops(nakedStops);
+    }
+
+
     @Override
     public void onMarkerDragStart(Marker marker) {
 
@@ -195,7 +220,7 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
         if(stopMarkerHashmap.containsKey(marker)) {
             Log.d(TAG,"Handle marker long detected");
             handleMarkerLongClick(marker);
-        }else{
+        }else if(clusterMarkerHashmap.containsKey(marker)){
             Log.d(TAG, "Handle clust long detected");
             handleClusterLongClick(marker);
         }
@@ -214,10 +239,13 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
 
         List<Polyline> oldPolylineList = stopMarkerHashmap.get(marker).getPolylines();
         if(oldPolylineList!=null) { //the user just wants to remove them :)
+            //remove polylines
             for(Polyline polyline: oldPolylineList){
                 polyline.remove();
             }
             stopMarkerHashmap.get(marker).setPolylines(null);
+
+            //remove arrows
             List<Marker> arrowsToRemove = stopMarkerHashmap.get(marker).getDirectionalArrows();
             if(arrowsToRemove!=null){
                 for(Marker markerToRemove:arrowsToRemove){
@@ -226,15 +254,31 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
             }
             stopMarkerHashmap.get(marker).setDirectionalArrows(null);
 
+            //remove generatedNakedbuststops
+            List<Marker> nakedStopsToRemove = stopMarkerHashmap.get(marker).getNakedStops();
+            if(nakedStopsToRemove!=null) {
+                for(Marker markerToRemove:nakedStopsToRemove){
+                    markerToRemove.remove();
+                }
+            }
+            stopMarkerHashmap.get(marker).setNakedStops(null);
+
+
+            //revert to the original icon
+            marker.setIcon(BitmapDescriptorFactory.fromResource(R.drawable.ic_directions_bus_black_24dp));
+            //so it doesn't move
             marker.setPosition(stopMarkerHashmap.get(marker).getLatLng());
             return;
         }
 
+
         List<Polyline> polylinesList = drawPolylinesForStop(stop);
         List<Marker> directionsList = drawArrowsForStop(stop);
+        drawNakedStopsForStop(stop,marker);
         stopMarkerHashmap.get(marker).setPolylines(polylinesList);
         stopMarkerHashmap.get(marker).setDirectionalArrows(directionsList);
 
+        marker.setIcon(BitmapDescriptorFactory.fromResource(R.drawable.ic_directions_bus_white_24dp));
         marker.setPosition(stopMarkerHashmap.get(marker).getLatLng());
     }
 
@@ -283,10 +327,37 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
         return result;
     }
 
+    private void drawNakedStopsForStop(Stop stop, final Marker originMarker){
+
+        //build the list of routes string
+        StringBuffer routeHeadsignString = new StringBuffer();
+        for(Route r:stop.getRoutes()) {
+            routeHeadsignString.append(r.getHeadsign());
+            routeHeadsignString.append(",");
+        }
+        Date now = new Date();
+        String time = new SimpleDateFormat("kk:mm:ss").format(now);
+        Calendar c = Calendar.getInstance();
+        int weekDay = c.get(Calendar.DAY_OF_WEEK);
+
+        RestAdapter restAdapter = new RestAdapter.Builder().setEndpoint(ROUTES_API).build();
+        RoutesAPI routes = restAdapter.create(RoutesAPI.class);
+        routes.getAllStops(routeHeadsignString.toString(),time+"",weekDay+"",60*30 + "",new Callback<StopPOJO>(){
+            @Override
+            public void success(StopPOJO stopPOJOR, Response response) {
+                 drawNakedStops(stopPOJOR, Color.GREEN,originMarker);
+            }
+            @Override
+            public void failure(RetrofitError error) {
+                Log.e(TAG, "Api call failed");
+            }
+        });
+
+    }
+
+
     private List<Marker> drawArrowsForStop(Stop stop) {
         List<Marker> result = new ArrayList<>();
-
-
 
         for(Route r:stop.getRoutes()){
             MarkerOptions markerOptions = new MarkerOptions();
@@ -319,7 +390,7 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
     public void onMarkerDrag(Marker marker) {
         if(stopMarkerHashmap.containsKey(marker))
             marker.setPosition(stopMarkerHashmap.get(marker).getLatLng());
-        else
+        else if(clusterMarkerHashmap.containsKey(marker))
             marker.setPosition(clusterMarkerHashmap.get(marker).getLatLng());
     }
 
@@ -327,7 +398,7 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
     public void onMarkerDragEnd(Marker marker) {
         if(stopMarkerHashmap.containsKey(marker))
             marker.setPosition(stopMarkerHashmap.get(marker).getLatLng());
-        else
+        else if(clusterMarkerHashmap.containsKey(marker))
             marker.setPosition(clusterMarkerHashmap.get(marker).getLatLng());
     }
 
@@ -354,7 +425,8 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
         routes.getRoutesAround(latLng.latitude + "", latLng.longitude + "", RADIUS + "", time, weekDay + "", LIMIT + "", new Callback<StopPOJO>() {
             @Override
             public void success(StopPOJO stopPOJOR, Response response) {
-                drawStopPOJO(stopPOJOR, latLng);
+                removeNakedStops(stopPOJOR);
+                drawCluster(stopPOJOR, latLng, 0);
                 isLoadingAPICall = false;
                 progressBar.setVisibility(View.INVISIBLE);
             }
@@ -366,6 +438,19 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
         });
 
     }
+
+    private void removeNakedStops(StopPOJO stopPOJO){
+        List<Stop> stopList = stopPOJO.getStops();
+        for(Stop stop:stopList){
+            Marker m = nakedGeneratedStopsIDHashmap.get(stop.getStopId());
+            if(m!=null){
+                nakedGeneratedStopsHashMap.remove(m);
+                nakedGeneratedStopsIDHashmap.remove(stop.getStopId());
+                m.remove();
+            }
+        }
+    }
+
 
     private  BitmapDescriptor getArrowWithColor(int color) {
 

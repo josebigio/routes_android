@@ -15,6 +15,9 @@ public interface RoutesAPI {
     @GET("/api/getroutesandcoordinates")
     public void getRoutesAround(@Query("lat") String lat,@Query("lng") String lng, @Query("radius") String radius, @Query(value="time",encodeValue = false) String time,@Query("weekday") String weekday,@Query("limit") String limit,  Callback<StopPOJO> response);
 
+    @GET("/api/getnakedstopsforroutes")
+    public void getAllStops(@Query("headsigns") String headsigns,@Query(value="time",encodeValue = false) String time,@Query("weekday") String weekday,@Query("limit") String limit, Callback<StopPOJO> response);
+
     @GET("/api/getroutes")
     public Observable<StopPOJO> getRoutesAround(@Query("lat") String lat,@Query("lng") String lng, @Query("radius") String radius, @Query(value="time",encodeValue = false) String time,@Query("weekday") String weekday,@Query("limit") String limit);
 }
