@@ -1,9 +1,14 @@
 
 package com.example.josebigio.mapapp.model;
 
+import android.graphics.Color;
+
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import javax.annotation.Generated;
+
+import com.example.josebigio.mapapp.Utilities.ColorGenerator;
 import com.google.gson.annotations.Expose;
 import com.google.gson.annotations.SerializedName;
 
@@ -131,6 +136,25 @@ public class Stop {
      */
     public void setData(Boolean data) {
         this.data = data;
+    }
+
+    public int[] getStopColors(){
+        List<Route> routeList = getRoutes();
+        HashSet<String> set = new HashSet();
+        for (Route route : routes) {
+            set.add(route.getHeadsign());
+        }
+
+        int colors[] = new int[set.size()];
+        int i = 0;
+        for(String headSign: set){
+            colors[i]= ColorGenerator.getColorForRoute(headSign);
+            i++;
+        }
+        if (colors.length==0)
+            colors = new int[]{Color.WHITE};
+
+        return colors;
     }
 
 

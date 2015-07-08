@@ -17,11 +17,14 @@ public class StopMarkerProperties extends MarkerProperties {
     private List<Marker> directionalArrows;
     private List<Marker> nakedStops;
 
+    public Boolean isExpanded;
+
 
     public StopMarkerProperties(Stop stop, LatLng latlng, List<Polyline> polylines){
         super(latlng);
         this.stop = stop;
         this.polylines = polylines;
+        this.isExpanded = false;
     }
 
 

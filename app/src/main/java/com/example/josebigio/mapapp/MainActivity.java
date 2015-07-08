@@ -61,7 +61,7 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
 
     static final String ROUTES_API="https://routes-app-pro.herokuapp.com";
     static final double RADIUS = 0.35;
-    static final int LIMIT = 60*60*2; //The range in seconds for when looking at upcoming buses
+    static final int LIMIT = 60*60*1; //The range in seconds for when looking at upcoming buses
     static final double MIN_DIST_BETWEEN_ARROWS = 0.5;
 
     @InjectView(R.id.progressBar)
@@ -127,7 +127,7 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
         if (location != null)
             onLocationChanged(location);
 
-        locationManager.requestLocationUpdates(bestProvider, 20000, 0, this);
+        locationManager.requestLocationUpdates(bestProvider, 60000, 0, this);
 
     }
 
@@ -158,29 +158,29 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
     }
 
 
-    public void drawCluster(StopPOJO stopPOJO, LatLng latLng, int color) {
+    public void drawCluster(StopPOJO stopPOJO, LatLng latLng) {
         List<Marker> markers = new ArrayList<>();
         List<Stop> stopList = stopPOJO.getStops();
         Marker cluster = googleMap.addMarker(new MarkerOptions()
-                    .draggable(true)
-                    .position(latLng)
-                    .icon(BitmapDescriptorFactory.fromResource(R.drawable.ic_stars_black_24dp)));
-        clusterMarkerHashmap.put(cluster, new ClusterMarkerProperties(markers));
+                .draggable(true)
+                .position(latLng)
+                .icon(BitmapDescriptorFactory.fromResource(R.drawable.ic_stars_black_24dp)));
+        ClusterMarkerProperties cmp = new ClusterMarkerProperties(markers);
+        cmp.setLatLng(latLng);
+        clusterMarkerHashmap.put(cluster, cmp);
         allMarkerPositionSet.add(cluster.getPosition());
 
         for (Stop stop : stopList) {
             List<Route> routes = stop.getRoutes();
             if(routes == null) continue;
-            StringBuffer headSigns = new StringBuffer();
-            for(Route route: routes)
-                headSigns.append(route.getHeadsign()+": " + route.getArrivalTime() + "\n");
+
+
 
             Marker m = googleMap.addMarker(new MarkerOptions()
                     .position(new LatLng(stop.getLat(), stop.getLng()))
                     .title(stop.getStopId() + "")
-                    .snippet(headSigns.toString())
                     .draggable(true)
-                    .icon(BitmapDescriptorFactory.fromResource(R.drawable.ic_directions_bus_black_24dp)));
+                    .icon(IconColorChanger.getNewIconWithColor(Color.BLACK,stop.getStopColors(),R.drawable.ic_directions_bus_black_24dp,this)));
 
             allMarkerPositionSet.add(m.getPosition());
             stopMarkerHashmap.put(m,new StopMarkerProperties(stop,m.getPosition(),null));
@@ -200,15 +200,23 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
                 if (routes == null) continue;
                 StringBuffer headSigns = new StringBuffer();
 
-                HashSet set = new HashSet();
+                HashSet<String> set = new HashSet();
                 for (Route route : routes) {
                     headSigns.append(route.getHeadsign() + ": " + route.getArrivalTime() + "\n");
                     set.add(route.getHeadsign());
                 }
 
-                int color = (set.size()==1) ? ColorGenerator.getColorForRoute(routes.get(0).getHeadsign()) : Color.BLUE;
+//                int colors[] = new int[set.size()];
+//                int i = 0;
+//                for(String headSign: set){
+//                    colors[i]= ColorGenerator.getColorForRoute(headSign);
+//                    i++;
+//                }
+//                if (colors.length==0)
+//                    colors = new int[]{Color.WHITE};
 
-                BitmapDescriptor busIcon = IconColorChanger.getNewIconWithColor(Color.BLACK, color, R.drawable.ic_directions_bus_black_18dp, this);
+
+                BitmapDescriptor busIcon = IconColorChanger.getNewIconWithColor(Color.BLACK, stop.getStopColors(), R.drawable.ic_directions_bus_black_18dp, this);
 
                 Marker m = googleMap.addMarker(new MarkerOptions()
                         .position(new LatLng(stop.getLat(), stop.getLng()))
@@ -237,7 +245,7 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
             handleStopMarkerLongClick(marker);
         }else if(clusterMarkerHashmap.containsKey(marker)){
             Log.d(TAG, "Handle clust long detected");
-            handleClusterClick(marker);
+            handleClusterLongClick(marker);
         }
 
     }
@@ -247,55 +255,89 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
         If they where already drawn, then this cleans them
      */
     private void handleStopMarkerLongClick(Marker marker){
+        if(stopMarkerHashmap.get(marker).isExpanded)
+            colapseStopMarker(marker);
+        else
+            expandStopMarker(marker);
+    }
 
-        Stop stop = stopMarkerHashmap.get(marker).getStop();
+    private void expandStopMarker(Marker stopMarker){
+        Stop stop = stopMarkerHashmap.get(stopMarker).getStop();
         if(stop == null)
             return;
 
-        List<Polyline> oldPolylineList = stopMarkerHashmap.get(marker).getPolylines();
-        if(oldPolylineList!=null) { //the user just wants to remove them :)
-            //remove polylines
-            for(Polyline polyline: oldPolylineList){
-                polyline.remove();
-            }
-            stopMarkerHashmap.get(marker).setPolylines(null);
-
-            //remove arrows
-            List<Marker> arrowsToRemove = stopMarkerHashmap.get(marker).getDirectionalArrows();
-            if(arrowsToRemove!=null){
-                for(Marker markerToRemove:arrowsToRemove){
-                    markerToRemove.remove();
-                }
-            }
-            stopMarkerHashmap.get(marker).setDirectionalArrows(null);
-
-            //remove generatedNakedbuststops
-            List<Marker> nakedStopsToRemove = stopMarkerHashmap.get(marker).getNakedStops();
-            if(nakedStopsToRemove!=null) {
-                for(Marker markerToRemove:nakedStopsToRemove){
-                    markerToRemove.remove();
-                    allMarkerPositionSet.remove(markerToRemove.getPosition());
-                }
-            }
-            stopMarkerHashmap.get(marker).setNakedStops(null);
-
-
-            //revert to the original icon
-            marker.setIcon(BitmapDescriptorFactory.fromResource(R.drawable.ic_directions_bus_black_24dp));
-            //so it doesn't move
-            marker.setPosition(stopMarkerHashmap.get(marker).getLatLng());
-            return;
-        }
-
-
         List<Polyline> polylinesList = drawPolylinesForStop(stop);
         List<Marker> directionsList = drawArrowsForStop(stop);
-        drawNakedStopsForStop(stop, marker);
-        stopMarkerHashmap.get(marker).setPolylines(polylinesList);
-        stopMarkerHashmap.get(marker).setDirectionalArrows(directionsList);
+        drawNakedStopsForStop(stop, stopMarker);
+        stopMarkerHashmap.get(stopMarker).setPolylines(polylinesList);
+        stopMarkerHashmap.get(stopMarker).isExpanded = true;
+        stopMarkerHashmap.get(stopMarker).setDirectionalArrows(directionsList);
+        stopMarker.setIcon(BitmapDescriptorFactory.fromResource(R.drawable.ic_directions_bus_white_24dp));
+        stopMarker.setPosition(stopMarkerHashmap.get(stopMarker).getLatLng());
 
-        marker.setIcon(BitmapDescriptorFactory.fromResource(R.drawable.ic_directions_bus_white_24dp));
-        marker.setPosition(stopMarkerHashmap.get(marker).getLatLng());
+
+    }
+
+    private void colapseStopMarker(Marker stopMarker) {
+
+        List<Polyline> oldPolylineList = stopMarkerHashmap.get(stopMarker).getPolylines();
+        stopMarkerHashmap.get(stopMarker).isExpanded = false;
+        for(Polyline polyline: oldPolylineList){
+            polyline.remove();
+        }
+        stopMarkerHashmap.get(stopMarker).setPolylines(null);
+
+        //remove arrows
+        List<Marker> arrowsToRemove = stopMarkerHashmap.get(stopMarker).getDirectionalArrows();
+        if(arrowsToRemove!=null){
+            for(Marker markerToRemove:arrowsToRemove){
+                markerToRemove.remove();
+            }
+        }
+        stopMarkerHashmap.get(stopMarker).setDirectionalArrows(null);
+
+        //remove generatedNakedbuststops
+        List<Marker> nakedStopsToRemove = stopMarkerHashmap.get(stopMarker).getNakedStops();
+        if(nakedStopsToRemove!=null) {
+            for(Marker markerToRemove:nakedStopsToRemove){
+                markerToRemove.remove();
+                allMarkerPositionSet.remove(markerToRemove.getPosition());
+            }
+        }
+        stopMarkerHashmap.get(stopMarker).setNakedStops(null);
+
+
+        //revert to the original icon
+        stopMarker.setIcon(BitmapDescriptorFactory.fromResource(R.drawable.ic_directions_bus_black_24dp));
+        //so it doesn't move
+        stopMarker.setPosition(stopMarkerHashmap.get(stopMarker).getLatLng());
+    }
+
+    private void handleClusterLongClick(Marker cluster){
+        if(clusterMarkerHashmap.get(cluster).isExpanded)
+            colapseCluster(cluster);
+        else
+            expandCluster(cluster);
+    }
+
+    private void expandCluster(Marker clusterMarker){
+        List<Marker> stopMarkerList = clusterMarkerHashmap.get(clusterMarker).getStopMarkers();
+        for(Marker stopMarker: stopMarkerList){
+            if(!stopMarkerHashmap.get(stopMarker).isExpanded)
+                expandStopMarker(stopMarker);
+        }
+        clusterMarkerHashmap.get(clusterMarker).isExpanded = true;
+        clusterMarker.setPosition(clusterMarkerHashmap.get(clusterMarker).getLatLng());
+    }
+
+    private void colapseCluster(Marker clusterMarker){
+        List<Marker> stopMarkerList = clusterMarkerHashmap.get(clusterMarker).getStopMarkers();
+        for(Marker stopMarker: stopMarkerList){
+            if(stopMarkerHashmap.get(stopMarker).isExpanded)
+                colapseStopMarker(stopMarker);
+        }
+        clusterMarkerHashmap.get(clusterMarker).isExpanded = false;
+        clusterMarker.setPosition(clusterMarkerHashmap.get(clusterMarker).getLatLng());
     }
 
     /*
@@ -324,7 +366,8 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
             if(nakedStopsToRemove!=null){
                 for(Marker markerToRemove:nakedStopsToRemove){
                     NakedStopMarkerProperties n = nakedGeneratedStopsHashMap.get(markerToRemove);
-                    nakedGeneratedStopsIDHashmap.remove(n.getStop().getStopId());
+                    if(n!=null)
+                        nakedGeneratedStopsIDHashmap.remove(n.getStop().getStopId());
                     nakedGeneratedStopsHashMap.remove(markerToRemove);
                     allMarkerPositionSet.remove(markerToRemove.getPosition());
                     markerToRemove.remove();
@@ -387,7 +430,6 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
         List<Marker> result = new ArrayList<>();
 
         for(Route r:stop.getRoutes()){
-            MarkerOptions markerOptions = new MarkerOptions();
             Iterator<Coordinate> frontIterator = r.getCoordinates().iterator();
             Iterator<Coordinate> backIterator = r.getCoordinates().iterator();
             frontIterator.next();
@@ -425,8 +467,10 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
     public void onMarkerDragEnd(Marker marker) {
         if(stopMarkerHashmap.containsKey(marker))
             marker.setPosition(stopMarkerHashmap.get(marker).getLatLng());
-        else if(clusterMarkerHashmap.containsKey(marker))
+        else if(clusterMarkerHashmap.containsKey(marker)){
             marker.setPosition(clusterMarkerHashmap.get(marker).getLatLng());
+        }
+
     }
 
     @Override
@@ -453,7 +497,7 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
             @Override
             public void success(StopPOJO stopPOJOR, Response response) {
                 removeNakedStops(stopPOJOR);
-                drawCluster(stopPOJOR, latLng, 0);
+                drawCluster(stopPOJOR, latLng);
                 isLoadingAPICall = false;
                 progressBar.setVisibility(View.INVISIBLE);
             }
@@ -461,6 +505,7 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
             @Override
             public void failure(RetrofitError error) {
                 Log.e(TAG, "Api call failed");
+                progressBar.setVisibility(View.INVISIBLE);
             }
         });
 

@@ -14,20 +14,26 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory;
  */
 public class IconColorChanger {
 
-    public static BitmapDescriptor getNewIconWithColor(int originalColor, int desiredColor, int resourceID, Activity activity) {
+    public static BitmapDescriptor getNewIconWithColor(int originalColor, int[] desiredColors, int resourceID, Activity activity) {
 
         Bitmap clonedBitmap = BitmapFactory.decodeResource(activity.getResources(), resourceID).copy(Bitmap.Config.ARGB_8888, true);
         int [] allpixels = new int [ clonedBitmap.getHeight()*clonedBitmap.getWidth()];
 
         clonedBitmap.getPixels(allpixels, 0, clonedBitmap.getWidth(), 0, 0, clonedBitmap.getWidth(), clonedBitmap.getHeight());
 
+        int pixelsPerColor = (clonedBitmap.getHeight()*clonedBitmap.getWidth())/desiredColors.length;
         for(int i =0; i<clonedBitmap.getHeight()*clonedBitmap.getWidth();i++){
+            if( allpixels[i] == originalColor){
+                int colorIndex = i/pixelsPerColor;
+                if(colorIndex>desiredColors.length-1) colorIndex = 0;
+                allpixels[i] = desiredColors[colorIndex];
+            }
 
-            if( allpixels[i] == originalColor)
-                allpixels[i] = desiredColor;
         }
 
         clonedBitmap.setPixels(allpixels, 0, clonedBitmap.getWidth(), 0, 0, clonedBitmap.getWidth(), clonedBitmap.getHeight());
         return BitmapDescriptorFactory.fromBitmap(clonedBitmap);
     }
+
+
 }
