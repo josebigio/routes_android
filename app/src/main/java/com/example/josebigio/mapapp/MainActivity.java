@@ -4,16 +4,22 @@ import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.location.Address;
 import android.location.Criteria;
+import android.location.Geocoder;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
+import android.widget.AutoCompleteTextView;
+import android.widget.ImageButton;
 import android.widget.ProgressBar;
+import android.widget.Toast;
 
 import com.example.josebigio.mapapp.CustomClasses.ClusterMarkerProperties;
+import com.example.josebigio.mapapp.CustomClasses.PlaceAutocompleteAdapter;
 import com.example.josebigio.mapapp.CustomClasses.DialogViews.TransitTablePopupList;
 import com.example.josebigio.mapapp.CustomClasses.NakedStopMarkerProperties;
 import com.example.josebigio.mapapp.CustomClasses.StopMarkerProperties;
@@ -24,12 +30,16 @@ import com.example.josebigio.mapapp.model.Coordinate;
 import com.example.josebigio.mapapp.model.Route;
 import com.example.josebigio.mapapp.model.Stop;
 import com.example.josebigio.mapapp.model.StopPOJO;
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.location.places.Places;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.MapFragment;
 import com.google.android.gms.maps.model.BitmapDescriptor;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.LatLngBounds;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.Polyline;
@@ -37,6 +47,7 @@ import com.google.android.gms.maps.model.PolylineOptions;
 import com.google.maps.android.SphericalUtil;
 
 
+import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -48,13 +59,14 @@ import java.util.List;
 
 import butterknife.ButterKnife;
 import butterknife.InjectView;
+import butterknife.OnClick;
 import retrofit.Callback;
 import retrofit.RestAdapter;
 import retrofit.RetrofitError;
 import retrofit.client.Response;
 
 
-public class MainActivity extends Activity implements LocationListener, GoogleMap.OnMarkerDragListener, GoogleMap.OnMapLongClickListener, GoogleMap.OnMarkerClickListener {
+public class MainActivity extends Activity implements LocationListener, GoogleMap.OnMarkerDragListener, GoogleMap.OnMapLongClickListener, GoogleMap.OnMarkerClickListener, GoogleApiClient.OnConnectionFailedListener, GoogleApiClient.ConnectionCallbacks {
 
     static final String TAG = "MAIN";
 
@@ -79,6 +91,21 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
     Boolean alreadyZoomed;
     Boolean isLoadingAPICall;
 
+    LatLng currentPosition;
+
+    GoogleApiClient mGoogleApiClient;
+    @InjectView(R.id.autoCompleteTextView)
+    AutoCompleteTextView autoCompleteTextView;
+    @InjectView(R.id.searchButton)
+    ImageButton searchButton;
+
+
+
+
+
+
+    private static final LatLngBounds BOUNDS_GREATER_SYDNEY = new LatLngBounds(
+            new LatLng(-34.041458, 150.790100), new LatLng(-33.682247, 151.383362));
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -95,9 +122,64 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
         nakedGeneratedStopsIDHashmap = new HashMap<>();
         allMarkerPositionSet = new HashSet<>();
 
+        setAutoComplete();
         createMapView();
+
+
+
     }
 
+    private void setAutoComplete(){
+        mGoogleApiClient = new GoogleApiClient
+                .Builder(this)
+                .addApi(Places.GEO_DATA_API)
+                .addConnectionCallbacks(this)
+                .addOnConnectionFailedListener(this)
+                .build();
+
+        autoCompleteTextView.setAdapter(new PlaceAutocompleteAdapter(this, R.layout.expandable_list_item, R.id.expandableItem, mGoogleApiClient, BOUNDS_GREATER_SYDNEY, null));
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        mGoogleApiClient.connect();
+    }
+
+    @Override
+    protected void onStop() {
+        mGoogleApiClient.disconnect();
+        super.onStop();
+    }
+
+    @OnClick(R.id.searchButton)
+    public void searchButtonPress(){
+        pinAddress(autoCompleteTextView.getText().toString());
+
+    }
+
+    private void pinAddress(String addres) {
+        Geocoder coder = new Geocoder(this);
+        try {
+            ArrayList<Address> adresses = (ArrayList<Address>) coder.getFromLocationName(addres, 1);
+            if(adresses!=null && adresses.size()==1){
+                LatLng latLng = new LatLng(adresses.get(0).getLatitude(), adresses.get(0).getLongitude());
+                Marker poi = googleMap.addMarker(new MarkerOptions()
+                        .title(addres)
+                        .position(latLng));
+                googleMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
+                googleMap.animateCamera(CameraUpdateFactory.zoomTo(15));
+            }
+            else{
+                Toast.makeText(this,"Could not pin address",Toast.LENGTH_LONG).show();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch(IllegalArgumentException e){
+            e.printStackTrace();
+        }
+
+    }
 
 
 
@@ -139,6 +221,11 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
             googleMap.moveCamera(CameraUpdateFactory.newLatLng(new LatLng(location.getLatitude(), location.getLongitude())));
             googleMap.animateCamera(CameraUpdateFactory.zoomTo(15));
         }
+
+        currentPosition = new LatLng(location.getLatitude(),location.getLongitude());
+
+
+
 
     }
 
@@ -206,15 +293,6 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
                     set.add(route.getHeadsign());
                 }
 
-//                int colors[] = new int[set.size()];
-//                int i = 0;
-//                for(String headSign: set){
-//                    colors[i]= ColorGenerator.getColorForRoute(headSign);
-//                    i++;
-//                }
-//                if (colors.length==0)
-//                    colors = new int[]{Color.WHITE};
-
 
                 BitmapDescriptor busIcon = IconColorChanger.getNewIconWithColor(Color.BLACK, stop.getStopColors(), R.drawable.ic_directions_bus_black_18dp, this);
 
@@ -254,7 +332,7 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
         Draws the polilines for all the routes in that stop.
         If they where already drawn, then this cleans them
      */
-    private void handleStopMarkerLongClick(Marker marker){
+    private void handleStopMarkerLongClick(Marker marker) {
         if(stopMarkerHashmap.get(marker).isExpanded)
             colapseStopMarker(marker);
         else
@@ -332,7 +410,7 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
 
     private void colapseCluster(Marker clusterMarker){
         List<Marker> stopMarkerList = clusterMarkerHashmap.get(clusterMarker).getStopMarkers();
-        for(Marker stopMarker: stopMarkerList){
+        for (Marker stopMarker : stopMarkerList) {
             if(stopMarkerHashmap.get(stopMarker).isExpanded)
                 colapseStopMarker(stopMarker);
         }
@@ -412,11 +490,12 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
 
         RestAdapter restAdapter = new RestAdapter.Builder().setEndpoint(ROUTES_API).build();
         RoutesAPI routes = restAdapter.create(RoutesAPI.class);
-        routes.getAllStops(routeHeadsignString.toString(),time+"",weekDay+"",60*30 + "",new Callback<StopPOJO>(){
+        routes.getAllStops(routeHeadsignString.toString(), time + "", weekDay + "", 60 * 30 + "", new Callback<StopPOJO>() {
             @Override
             public void success(StopPOJO stopPOJOR, Response response) {
                 drawNakedStops(stopPOJOR, originMarker);
             }
+
             @Override
             public void failure(RetrofitError error) {
                 Log.e(TAG, "Api call failed");
@@ -467,7 +546,7 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
     public void onMarkerDragEnd(Marker marker) {
         if(stopMarkerHashmap.containsKey(marker))
             marker.setPosition(stopMarkerHashmap.get(marker).getLatLng());
-        else if(clusterMarkerHashmap.containsKey(marker)){
+        else if (clusterMarkerHashmap.containsKey(marker)){
             marker.setPosition(clusterMarkerHashmap.get(marker).getLatLng());
         }
 
@@ -564,4 +643,28 @@ public class MainActivity extends Activity implements LocationListener, GoogleMa
         transitDialog.setStop(smp.getStop());
         transitDialog.show();
     }
+
+
+    @Override
+    public void onConnectionFailed(ConnectionResult connectionResult) {
+        Log.e(TAG, "Google Places API connection failed with error code: "
+                + connectionResult.getErrorCode());
+
+        Toast.makeText(this,
+                "Google Places API connection failed with error code:" +
+                        connectionResult.getErrorCode(),
+                Toast.LENGTH_LONG).show();
+    }
+
+    @Override
+    public void onConnected(Bundle bundle) {
+        Log.d(TAG,"IT IS CONNECTED!!!!!");
+    }
+
+    @Override
+    public void onConnectionSuspended(int i) {
+
+    }
+
+
 }
